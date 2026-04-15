@@ -1,7 +1,7 @@
 // ======================================================
-// content.js — フォーム自動入力 v3（日本語版）
-//   対応: 姓名分離、都道府県、役職・診療科・職種（ラジオ/プルダウン）
-//   修正: 「名」が「医療機関名」等に誤マッチする問題を解消
+// content.js — フォーム自動入力 v3.1（日本語版）
+//   修正: 「名」単体ラベルの入力バグを修正
+//   修正: 「名 *」のような必須マーク付きラベルにも対応
 // ======================================================
 
 // --- キーワード定義 ---
@@ -16,7 +16,7 @@ const FIELD_MAP = {
     'organization', 'company', 'affiliation', 'institution',
     'hospital', 'clinic', 'employer'
   ],
-  email:      ['メール', 'email', 'e-mail', 'メールアドレス', 'mail'],
+  email:      ['メール', 'email', 'e-mail', 'メールアドレス', 'eメール', 'mail'],
   phone:      ['電話', 'tel', 'phone', '連絡先', '携帯'],
   prefecture: ['都道府県', '都道府県名', 'prefecture', 'state', 'province', '所在地'],
   jobTitle:   ['役職', '職位', '肩書', 'ご役職', 'job title', 'position', 'role'],
@@ -56,24 +56,41 @@ function isGoogleForm() {
 }
 
 // ==================================================
+// ラベルを正規化（必須マーク等を除去）
+// ==================================================
+function normalizeLabel(text) {
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/[\s*＊※]+$/g, '')  // 末尾の * や ※ を除去
+    .replace(/^[\s*＊※]+/g, '')  // 先頭の * や ※ を除去
+    .trim();
+}
+
+// ==================================================
 // ラベルからフィールドキーを特定
 // ==================================================
 function matchFieldKey(label) {
+  // 1) 施設系を最優先（「〇〇名」の誤マッチ防止）
   if (FIELD_MAP.facility.some((kw) => label.includes(kw.toLowerCase()))) {
     return 'facility';
   }
 
+  // 2) 姓
   if (FIELD_MAP.lastName.some((kw) => label.includes(kw.toLowerCase()))) {
     return 'lastName';
   }
 
+  // 3) 名（英語キーワード）
   if (FIELD_MAP.firstName.some((kw) => label.includes(kw.toLowerCase()))) {
     return 'firstName';
   }
+  // 3b) 日本語の「名」厳密マッチ
   if (isExactMei(label)) {
     return 'firstName';
   }
 
+  // 4) その他
   const otherKeys = ['email', 'phone', 'prefecture', 'jobTitle', 'department', 'jobType'];
   for (const key of otherKeys) {
     if (FIELD_MAP[key].some((kw) => label.includes(kw.toLowerCase()))) {
@@ -81,6 +98,7 @@ function matchFieldKey(label) {
     }
   }
 
+  // 5) フルネーム（最後に判定）
   if (FIELD_MAP.fullName.some((kw) => label.includes(kw.toLowerCase()))) {
     return 'fullName';
   }
@@ -92,7 +110,9 @@ function matchFieldKey(label) {
 }
 
 // ==================================================
-// 「名」の厳密マッチ
+// 「名」の厳密マッチ（v3.1 修正版）
+//   「名」「名 *」「名*」「名：」等にマッチ
+//   「企業名」「機関名」「名前」等は除外
 // ==================================================
 function isExactMei(label) {
   const falsePositives = [
@@ -104,9 +124,13 @@ function isExactMei(label) {
     if (label.includes(fp.toLowerCase())) return false;
   }
 
-  if (label === '名' || label === 'めい') return true;
-  if (/(?:^|\s|（)名(?:$|\s|（|）|:|：)/.test(label)) return true;
-  if (label.includes('めい')) return true;
+  // 正規化したラベルが「名」そのもの
+  const cleaned = label.replace(/[\s*＊※:：()（）]/g, '').trim();
+  if (cleaned === '名' || cleaned === 'めい') return true;
+
+  // 「名」が単独で存在するパターン（前後が空白・記号・先頭・末尾）
+  if (/(?:^|[\s（(])名(?:$|[\s）):：*＊※])/.test(label)) return true;
+  if (label === '名') return true;
 
   return false;
 }
@@ -123,7 +147,7 @@ function fillGoogleForm(profile) {
                  || block.querySelector('.freebirdFormviewItemItemTitle');
     if (!labelEl) return;
 
-    const labelText = labelEl.textContent.trim().toLowerCase();
+    const labelText = normalizeLabel(labelEl.textContent);
 
     const input = block.querySelector(
       'input[type="text"], input[type="email"], input[type="tel"], textarea'
@@ -160,7 +184,7 @@ function fillGoogleFormRadio(profile) {
                  || block.querySelector('.freebirdFormviewItemItemTitle');
     if (!labelEl) return;
 
-    const groupLabel = labelEl.textContent.trim().toLowerCase();
+    const groupLabel = normalizeLabel(labelEl.textContent);
     const fieldKey = matchFieldKey(groupLabel);
     if (!fieldKey) return;
 
@@ -207,7 +231,7 @@ function fillGenericForm(profile) {
   inputs.forEach((input) => {
     if (input.value && input.value.trim() !== '') return;
 
-    const label = guessLabel(input).toLowerCase();
+    const label = normalizeLabel(guessLabel(input));
     if (!label) return;
 
     const key = matchFieldKey(label);
@@ -226,7 +250,7 @@ function fillGenericForm(profile) {
 
   const selects = document.querySelectorAll('select');
   selects.forEach((sel) => {
-    const label = guessLabel(sel).toLowerCase();
+    const label = normalizeLabel(guessLabel(sel));
     if (!label) return;
 
     const fieldKey = matchFieldKey(label);
@@ -276,7 +300,7 @@ function fillRadioButtons(profile) {
       if (radioLabel.includes(target.value.toLowerCase()) ||
           target.value.toLowerCase().includes(radioLabel)) {
 
-        const groupLabel = getRadioGroupLabel(radio).toLowerCase();
+        const groupLabel = normalizeLabel(getRadioGroupLabel(radio));
 
         if (!groupLabel) {
           radio.click();
