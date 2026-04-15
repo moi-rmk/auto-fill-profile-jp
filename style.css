@@ -1,0 +1,96 @@
+/* ===== 全体 ===== */
+body {
+  width: 320px;
+  font-family: "Hiragino Sans", "Meiryo", sans-serif;
+  padding: 16px;
+  margin: 0;
+  background: #fafafa;
+}
+
+h1 {
+  font-size: 16px;
+  margin: 0 0 12px;
+  color: #333;
+  text-align: center;
+}
+
+/* ===== フィールド ===== */
+.field {
+  margin-bottom: 10px;
+}
+
+.field label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #555;
+  margin-bottom: 3px;
+}
+
+.field input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.field input:focus {
+  border-color: #4a90d9;
+}
+
+/* ===== 姓名の横並び ===== */
+.field-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.field.half {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+/* ===== ボタン ===== */
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+button {
+  flex: 1;
+  padding: 8px 0;
+  font-size: 14px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  cursor: pointer;
+  background: #fff;
+  transition: background 0.15s;
+}
+
+button:hover {
+  background: #f0f0f0;
+}
+
+button.primary {
+  background: #4a90d9;
+  color: #fff;
+  border-color: #4a90d9;
+}
+
+button.primary:hover {
+  background: #3a7cc3;
+}
+
+/* ===== ステータス ===== */
+#status {
+  text-align: center;
+  font-size: 12px;
+  margin-top: 8px;
+  color: #27ae60;
+  min-height: 18px;
+}
