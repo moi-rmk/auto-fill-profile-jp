@@ -1,43 +1,49 @@
 // ===== DOM 要素 =====
-const lastNameEl   = document.getElementById('lastName');
-const firstNameEl  = document.getElementById('firstName');
-const facilityEl   = document.getElementById('facility');
-const emailEl      = document.getElementById('email');
-const phoneEl      = document.getElementById('phone');
-const prefectureEl = document.getElementById('prefecture');
-const jobTitleEl   = document.getElementById('jobTitle');
-const departmentEl = document.getElementById('department');
-const jobTypeEl    = document.getElementById('jobType');
-const saveBtn      = document.getElementById('save');
-const fillBtn      = document.getElementById('fill');
-const statusEl     = document.getElementById('status');
+const lastNameEl      = document.getElementById('lastName');
+const firstNameEl     = document.getElementById('firstName');
+const lastNameKanaEl  = document.getElementById('lastNameKana');
+const firstNameKanaEl = document.getElementById('firstNameKana');
+const facilityEl      = document.getElementById('facility');
+const emailEl         = document.getElementById('email');
+const phoneEl         = document.getElementById('phone');
+const prefectureEl    = document.getElementById('prefecture');
+const jobTitleEl      = document.getElementById('jobTitle');
+const departmentEl    = document.getElementById('department');
+const jobTypeEl       = document.getElementById('jobType');
+const saveBtn         = document.getElementById('save');
+const fillBtn         = document.getElementById('fill');
+const statusEl        = document.getElementById('status');
 
 // ===== 起動時：保存済みデータを読み込む =====
 chrome.storage.local.get(['profile'], (result) => {
   const p = result.profile || {};
-  lastNameEl.value   = p.lastName   || '';
-  firstNameEl.value  = p.firstName  || '';
-  facilityEl.value   = p.facility   || '';
-  emailEl.value      = p.email      || '';
-  phoneEl.value      = p.phone      || '';
-  prefectureEl.value = p.prefecture || '';
-  jobTitleEl.value   = p.jobTitle   || '';
-  departmentEl.value = p.department || '';
-  jobTypeEl.value    = p.jobType    || '';
+  lastNameEl.value      = p.lastName      || '';
+  firstNameEl.value     = p.firstName     || '';
+  lastNameKanaEl.value  = p.lastNameKana  || '';
+  firstNameKanaEl.value = p.firstNameKana || '';
+  facilityEl.value      = p.facility      || '';
+  emailEl.value         = p.email         || '';
+  phoneEl.value         = p.phone         || '';
+  prefectureEl.value    = p.prefecture    || '';
+  jobTitleEl.value      = p.jobTitle      || '';
+  departmentEl.value    = p.department    || '';
+  jobTypeEl.value       = p.jobType       || '';
 });
 
 // ===== 保存ボタン =====
 saveBtn.addEventListener('click', () => {
   const profile = {
-    lastName:   lastNameEl.value.trim(),
-    firstName:  firstNameEl.value.trim(),
-    facility:   facilityEl.value.trim(),
-    email:      emailEl.value.trim(),
-    phone:      phoneEl.value.trim(),
-    prefecture: prefectureEl.value.trim(),
-    jobTitle:   jobTitleEl.value.trim(),
-    department: departmentEl.value.trim(),
-    jobType:    jobTypeEl.value.trim(),
+    lastName:      lastNameEl.value.trim(),
+    firstName:     firstNameEl.value.trim(),
+    lastNameKana:  lastNameKanaEl.value.trim(),
+    firstNameKana: firstNameKanaEl.value.trim(),
+    facility:      facilityEl.value.trim(),
+    email:         emailEl.value.trim(),
+    phone:         phoneEl.value.trim(),
+    prefecture:    prefectureEl.value.trim(),
+    jobTitle:      jobTitleEl.value.trim(),
+    department:    departmentEl.value.trim(),
+    jobType:       jobTypeEl.value.trim(),
   };
   chrome.storage.local.set({ profile }, () => {
     showStatus('✅ 保存しました');

@@ -1,14 +1,23 @@
 // ======================================================
-// content.js — フォーム自動入力 v3.1（日本語版）
-//   修正: 「名」単体ラベルの入力バグを修正
-//   修正: 「名 *」のような必須マーク付きラベルにも対応
+// content.js — フォーム自動入力 v3.2（日本語版）
+//   v3.2: ふりがな（ひらがな）/ フリガナ（カタカナ）自動判定対応
 // ======================================================
 
 // --- キーワード定義 ---
 const FIELD_MAP = {
-  lastName:  ['姓', 'せい', 'last name', 'family name', 'surname'],
-  firstName: ['first name', 'given name'],
-  fullName:  ['名前', '氏名', 'お名前', 'フルネーム', 'full name', 'your name'],
+  lastName:      ['姓', 'せい', 'last name', 'family name', 'surname'],
+  firstName:     ['first name', 'given name'],
+  fullName:      ['名前', '氏名', 'お名前', 'フルネーム', 'full name', 'your name'],
+  fullNameKana:  ['氏名（ふりがな）', '氏名（フリガナ）', '氏名（かな）', '氏名（カナ）',
+                  '名前（ふりがな）', '名前（フリガナ）', '名前（かな）', '名前（カナ）',
+                  'お名前（ふりがな）', 'お名前（フリガナ）',
+                  '氏名フリガナ', '氏名ふりがな', '名前フリガナ', '名前ふりがな'],
+  lastNameKana:  ['姓（ふりがな）', '姓（フリガナ）', '姓（かな）', '姓（カナ）',
+                  'せい（ふりがな）', 'せい（フリガナ）',
+                  '姓フリガナ', '姓ふりがな'],
+  firstNameKana: ['名（ふりがな）', '名（フリガナ）', '名（かな）', '名（カナ）',
+                  'めい（ふりがな）', 'めい（フリガナ）',
+                  '名フリガナ', '名ふりがな'],
   facility:  [
     '施設', '組織', '会社', '所属', '勤務先', '法人',
     '医療機関', '病院', 'クリニック', '企業名', '企業',
@@ -32,6 +41,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   const profile = msg.profile;
   profile.fullName = [profile.lastName, profile.firstName].filter(Boolean).join(' ');
+  // フルネームのふりがなを合成
+  profile.fullNameKana = [profile.lastNameKana, profile.firstNameKana].filter(Boolean).join(' ');
 
   let filled = 0;
 
@@ -56,14 +67,48 @@ function isGoogleForm() {
 }
 
 // ==================================================
+// ひらがな ↔ カタカナ 変換
+// ==================================================
+function toKatakana(str) {
+  return str.replace(/[\u3041-\u3096]/g, (ch) =>
+    String.fromCharCode(ch.charCodeAt(0) + 0x60)
+  );
+}
+
+function toHiragana(str) {
+  return str.replace(/[\u30A1-\u30F6]/g, (ch) =>
+    String.fromCharCode(ch.charCodeAt(0) - 0x60)
+  );
+}
+
+// ==================================================
+// ラベルがカタカナを要求しているか判定
+//   ラベルにカタカナが含まれていればカタカナ、そうでなければひらがな
+// ==================================================
+function wantsKatakana(originalLabel) {
+  return /\u30D5\u30EA\u30AC\u30CA|\u30AB\u30CA|\u30AB\u30BF\u30AB\u30CA/.test(originalLabel);
+}
+
+// ==================================================
+// ふりがな値をラベルに応じて変換して返す
+// ==================================================
+function convertKana(value, originalLabel) {
+  if (!value) return value;
+  if (wantsKatakana(originalLabel)) {
+    return toKatakana(value);
+  }
+  return toHiragana(value);
+}
+
+// ==================================================
 // ラベルを正規化（必須マーク等を除去）
 // ==================================================
 function normalizeLabel(text) {
   return text
     .trim()
     .toLowerCase()
-    .replace(/[\s*＊※]+$/g, '')  // 末尾の * や ※ を除去
-    .replace(/^[\s*＊※]+/g, '')  // 先頭の * や ※ を除去
+    .replace(/[\s*\uFF0A\u203B]+$/g, '')
+    .replace(/^[\s*\uFF0A\u203B]+/g, '')
     .trim();
 }
 
@@ -71,7 +116,22 @@ function normalizeLabel(text) {
 // ラベルからフィールドキーを特定
 // ==================================================
 function matchFieldKey(label) {
-  // 1) 施設系を最優先（「〇〇名」の誤マッチ防止）
+  // 0) ふりがな系を最優先（「氏名」「名前」より先に判定）
+  if (FIELD_MAP.fullNameKana.some((kw) => label.includes(kw.toLowerCase()))) {
+    return 'fullNameKana';
+  }
+  if (FIELD_MAP.lastNameKana.some((kw) => label.includes(kw.toLowerCase()))) {
+    return 'lastNameKana';
+  }
+  if (FIELD_MAP.firstNameKana.some((kw) => label.includes(kw.toLowerCase()))) {
+    return 'firstNameKana';
+  }
+  // 「ふりがな」「フリガナ」「かな」「カナ」がラベルに含まれていればフルネームふりがなと判定
+  if (/ふりがな|フリガナ|かな|カナ/.test(label)) {
+    return 'fullNameKana';
+  }
+
+  // 1) 施設系を優先
   if (FIELD_MAP.facility.some((kw) => label.includes(kw.toLowerCase()))) {
     return 'facility';
   }
@@ -85,7 +145,6 @@ function matchFieldKey(label) {
   if (FIELD_MAP.firstName.some((kw) => label.includes(kw.toLowerCase()))) {
     return 'firstName';
   }
-  // 3b) 日本語の「名」厳密マッチ
   if (isExactMei(label)) {
     return 'firstName';
   }
@@ -110,9 +169,7 @@ function matchFieldKey(label) {
 }
 
 // ==================================================
-// 「名」の厳密マッチ（v3.1 修正版）
-//   「名」「名 *」「名*」「名：」等にマッチ
-//   「企業名」「機関名」「名前」等は除外
+// 「名」の厳密マッチ
 // ==================================================
 function isExactMei(label) {
   const falsePositives = [
@@ -124,15 +181,27 @@ function isExactMei(label) {
     if (label.includes(fp.toLowerCase())) return false;
   }
 
-  // 正規化したラベルが「名」そのもの
-  const cleaned = label.replace(/[\s*＊※:：()（）]/g, '').trim();
+  const cleaned = label.replace(/[\s*\uFF0A\u203B:\uFF1A()\uFF08\uFF09]/g, '').trim();
   if (cleaned === '名' || cleaned === 'めい') return true;
 
-  // 「名」が単独で存在するパターン（前後が空白・記号・先頭・末尾）
-  if (/(?:^|[\s（(])名(?:$|[\s）):：*＊※])/.test(label)) return true;
+  if (/(?:^|[\s\uFF08(])名(?:$|[\s\uFF09):\uFF1A*\uFF0A\u203B])/.test(label)) return true;
   if (label === '名') return true;
 
   return false;
+}
+
+// ==================================================
+// プロフィールから値を取得（ふりがなはラベルに応じて変換）
+// ==================================================
+function getProfileValue(profile, key, originalLabel) {
+  const value = profile[key];
+  if (!value) return value;
+
+  // ふりがな系のキーならラベルに応じて変換
+  if (key === 'fullNameKana' || key === 'lastNameKana' || key === 'firstNameKana') {
+    return convertKana(value, originalLabel);
+  }
+  return value;
 }
 
 // ==================================================
@@ -147,7 +216,8 @@ function fillGoogleForm(profile) {
                  || block.querySelector('.freebirdFormviewItemItemTitle');
     if (!labelEl) return;
 
-    const labelText = normalizeLabel(labelEl.textContent);
+    const originalLabel = labelEl.textContent.trim();
+    const labelText = normalizeLabel(originalLabel);
 
     const input = block.querySelector(
       'input[type="text"], input[type="email"], input[type="tel"], textarea'
@@ -155,9 +225,12 @@ function fillGoogleForm(profile) {
     if (!input) return;
 
     const key = matchFieldKey(labelText);
-    if (key && profile[key]) {
-      setNativeValue(input, profile[key]);
-      filled++;
+    if (key) {
+      const value = getProfileValue(profile, key, originalLabel);
+      if (value) {
+        setNativeValue(input, value);
+        filled++;
+      }
     }
   });
 
@@ -231,13 +304,17 @@ function fillGenericForm(profile) {
   inputs.forEach((input) => {
     if (input.value && input.value.trim() !== '') return;
 
-    const label = normalizeLabel(guessLabel(input));
+    const originalLabel = guessLabel(input);
+    const label = normalizeLabel(originalLabel);
     if (!label) return;
 
     const key = matchFieldKey(label);
-    if (key && profile[key]) {
-      setNativeValue(input, profile[key]);
-      filled++;
+    if (key) {
+      const value = getProfileValue(profile, key, originalLabel);
+      if (value) {
+        setNativeValue(input, value);
+        filled++;
+      }
     }
   });
 
