@@ -10,73 +10,75 @@
   <div class="field-row">
     <div class="field half">
       <label for="lastName">姓</label>
-      <input type="text" id="lastName" placeholder="例：山田">
+      <input type="text" id="lastName" placeholder="山田">
     </div>
     <div class="field half">
       <label for="firstName">名</label>
-      <input type="text" id="firstName" placeholder="例：太郎">
+      <input type="text" id="firstName" placeholder="太郎">
     </div>
   </div>
 
   <div class="field-row">
     <div class="field half">
       <label for="lastNameKana">姓（ふりがな）</label>
-      <input type="text" id="lastNameKana" placeholder="例：やまだ">
+      <input type="text" id="lastNameKana" placeholder="やまだ">
     </div>
     <div class="field half">
       <label for="firstNameKana">名（ふりがな）</label>
-      <input type="text" id="firstNameKana" placeholder="例：たろう">
+      <input type="text" id="firstNameKana" placeholder="たろう">
     </div>
   </div>
 
-  <div class="field">
-    <label for="birthDate">生年月日</label>
-    <input type="date" id="birthDate">
-  </div>
-
-  <div class="field">
-    <label for="facility">施設名・組織名</label>
-    <input type="text" id="facility" placeholder="例：〇〇クリニック">
+  <div class="field-row">
+    <div class="field half">
+      <label for="birthDate">生年月日</label>
+      <input type="date" id="birthDate">
+    </div>
+    <div class="field half">
+      <label for="phone">電話番号</label>
+      <input type="tel" id="phone" placeholder="090-1234-5678">
+    </div>
   </div>
 
   <div class="field">
     <label for="email">メールアドレス</label>
-    <input type="email" id="email" placeholder="例：taro@example.com">
+    <input type="email" id="email" placeholder="taro@example.com">
   </div>
 
   <div class="field">
-    <label for="phone">電話番号</label>
-    <input type="tel" id="phone" placeholder="例：090-1234-5678">
+    <label for="facility">施設名・組織名</label>
+    <input type="text" id="facility" placeholder="〇〇クリニック">
   </div>
 
-  <div class="field">
-    <label for="postalCode">郵便番号</label>
-    <input type="text" id="postalCode" placeholder="例：100-0001">
-  </div>
-
-  <div class="field">
-    <label for="prefecture">都道府県</label>
-    <input type="text" id="prefecture" placeholder="例：東京都">
+  <div class="field-row">
+    <div class="field half">
+      <label for="postalCode">郵便番号</label>
+      <input type="text" id="postalCode" placeholder="100-0001">
+    </div>
+    <div class="field half">
+      <label for="prefecture">都道府県</label>
+      <input type="text" id="prefecture" placeholder="東京都">
+    </div>
   </div>
 
   <div class="field">
     <label for="address">住所</label>
-    <input type="text" id="address" placeholder="例：千代田区千代田1-1">
+    <input type="text" id="address" placeholder="千代田区千代田1-1">
   </div>
 
-  <div class="field">
-    <label for="jobTitle">役職</label>
-    <input type="text" id="jobTitle" placeholder="例：院長">
-  </div>
-
-  <div class="field">
-    <label for="department">診療科</label>
-    <input type="text" id="department" placeholder="例：内科">
-  </div>
-
-  <div class="field">
-    <label for="jobType">職種</label>
-    <input type="text" id="jobType" placeholder="例：医師">
+  <div class="field-row triple">
+    <div class="field third">
+      <label for="jobTitle">役職</label>
+      <input type="text" id="jobTitle" placeholder="院長">
+    </div>
+    <div class="field third">
+      <label for="department">診療科</label>
+      <input type="text" id="department" placeholder="内科">
+    </div>
+    <div class="field third">
+      <label for="jobType">職種</label>
+      <input type="text" id="jobType" placeholder="医師">
+    </div>
   </div>
 
   <div class="actions">
