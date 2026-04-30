@@ -1,12 +1,13 @@
 // ======================================================
-// content.js — フォーム自動入力 v3.5.2（日本語版）
+// content.js — フォーム自動入力 v3.5.3（日本語版）
+//   v3.5.3: 姓名が分かれていない場合はfullNameに自動昇格
 //   v3.5.2: ラベルをautocompleteより優先するように変更
 //   v3.5.1: iframe対応 + 全ページリトライ
 //   v3.5: Microsoft Forms対応 + SPAリトライ機構
 //   v3.4: input[type="email"]直接マッチ + autocomplete属性対応
 //   v3.3.1: Google Forms 日付フィールド対応を強化
 //   v3.3: Bug修正 + 生年月日・郵便番号・住所対応
-//   v3.2: ふりがな（ひらがな）/ フリガナ（カタカナ）自動判定対応
+//   v3.2: ふりがな / フリガナ 自動判定対応
 // ======================================================
 
 // --- キーワード定義 ---
@@ -76,7 +77,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
     if (isGoogleForm()) {
       filled += fillGoogleFormBuiltinEmail(profile);
-      filled += fillGoogleForm(profile);
+      filled += fillGoogleFormWithPromotion(profile);
       filled += fillGoogleFormRadio(profile);
       filled += fillGoogleFormDate(profile);
     }
@@ -287,7 +288,6 @@ function getKeyFromAutocomplete(el) {
 //   2) ラベルでマッチしない場合、autocomplete をフォールバック
 // ==================================================
 function resolveFieldKey(input) {
-  // まず表示ラベルを確認
   const originalLabel = guessLabelDeep(input);
   const label = normalizeLabel(originalLabel);
   if (label) {
@@ -297,13 +297,62 @@ function resolveFieldKey(input) {
     }
   }
 
-  // ラベルでマッチしない場合、autocomplete をフォールバック
   const acKey = getKeyFromAutocomplete(input);
   if (acKey) {
     return { key: acKey, originalLabel: originalLabel || '' };
   }
 
   return null;
+}
+
+// ==================================================
+// 姓名フィールド昇格（姓/名 が片方だけなら fullName に）
+//
+// inputPlan: Array<{ input, resolved: { key, originalLabel } | null }>
+// 戻り値: 同じ配列（key が書き換えられる場合あり）
+// ==================================================
+function promoteNameFields(inputPlan) {
+  let hasLastName      = false;
+  let hasFirstName     = false;
+  let hasFullName      = false;
+  let hasLastNameKana  = false;
+  let hasFirstNameKana = false;
+  let hasFullNameKana  = false;
+
+  for (const entry of inputPlan) {
+    if (!entry.resolved) continue;
+    switch (entry.resolved.key) {
+      case 'lastName':      hasLastName      = true; break;
+      case 'firstName':     hasFirstName     = true; break;
+      case 'fullName':      hasFullName      = true; break;
+      case 'lastNameKana':  hasLastNameKana  = true; break;
+      case 'firstNameKana': hasFirstNameKana = true; break;
+      case 'fullNameKana':  hasFullNameKana  = true; break;
+    }
+  }
+
+  // 姓のみ or 名のみ（両方が揃っていない）→ fullName に昇格
+  const promoteName = !hasFullName &&
+    ((hasLastName && !hasFirstName) || (!hasLastName && hasFirstName));
+  // カナも同様
+  const promoteKana = !hasFullNameKana &&
+    ((hasLastNameKana && !hasFirstNameKana) || (!hasLastNameKana && hasFirstNameKana));
+
+  if (promoteName || promoteKana) {
+    for (const entry of inputPlan) {
+      if (!entry.resolved) continue;
+      if (promoteName &&
+          (entry.resolved.key === 'lastName' || entry.resolved.key === 'firstName')) {
+        entry.resolved.key = 'fullName';
+      }
+      if (promoteKana &&
+          (entry.resolved.key === 'lastNameKana' || entry.resolved.key === 'firstNameKana')) {
+        entry.resolved.key = 'fullNameKana';
+      }
+    }
+  }
+
+  return inputPlan;
 }
 
 // ==================================================
@@ -346,12 +395,13 @@ function fillGoogleFormBuiltinEmail(profile) {
 }
 
 // ==================================================
-// Google Form テキスト入力
+// Google Form テキスト入力（姓名昇格対応）
 // ==================================================
-function fillGoogleForm(profile) {
-  let filled = 0;
+function fillGoogleFormWithPromotion(profile) {
   const questionBlocks = document.querySelectorAll('[data-params]');
 
+  // --- Phase 1: 全ブロックをスキャンしてプランを作成 ---
+  const plan = [];
   questionBlocks.forEach((block) => {
     const labelEl = block.querySelector('[role="heading"]')
                  || block.querySelector('.freebirdFormviewItemItemTitle');
@@ -367,13 +417,22 @@ function fillGoogleForm(profile) {
 
     const key = matchFieldKey(labelText);
     if (key && key !== 'birthDate') {
-      const value = getProfileValue(profile, key, originalLabel);
-      if (value) {
-        setNativeValue(input, value);
-        filled++;
-      }
+      plan.push({ input, resolved: { key, originalLabel } });
     }
   });
+
+  // --- Phase 2: 姓名昇格 ---
+  promoteNameFields(plan);
+
+  // --- Phase 3: 値を入力 ---
+  let filled = 0;
+  for (const entry of plan) {
+    const value = getProfileValue(profile, entry.resolved.key, entry.resolved.originalLabel);
+    if (value) {
+      setNativeValue(entry.input, value);
+      filled++;
+    }
+  }
 
   return filled;
 }
@@ -599,8 +658,8 @@ function fillMicrosoftForm(profile) {
 }
 
 function fillMicrosoftFormFromContainers(profile, containers) {
-  let filled = 0;
-
+  // --- Phase 1: スキャン ---
+  const plan = [];
   containers.forEach((container) => {
     const labelEl = container.querySelector(
       '[data-automation-id="questionTitle"], ' +
@@ -641,55 +700,70 @@ function fillMicrosoftFormFromContainers(profile, containers) {
     if (!input) return;
     if (input.value && input.value.trim() !== '') return;
 
-    if (key === 'birthDate' && profile.birthDate) {
-      setNativeValue(input, profile.birthDate);
-      filled++;
-      return;
-    }
-
-    const value = getProfileValue(profile, key, originalLabel);
-    if (value) {
-      setNativeValue(input, value);
-      filled++;
-    }
+    plan.push({ input, resolved: { key, originalLabel } });
   });
+
+  // --- Phase 2: 姓名昇格 ---
+  promoteNameFields(plan);
+
+  // --- Phase 3: 値を入力 ---
+  let filled = 0;
+  for (const entry of plan) {
+    if (entry.resolved.key === 'birthDate' && profile.birthDate) {
+      setNativeValue(entry.input, profile.birthDate);
+      filled++;
+      continue;
+    }
+    const value = getProfileValue(profile, entry.resolved.key, entry.resolved.originalLabel);
+    if (value) {
+      setNativeValue(entry.input, value);
+      filled++;
+    }
+  }
 
   return filled;
 }
 
 function fillMicrosoftFormDirect(profile) {
-  let filled = 0;
-
   const inputs = document.querySelectorAll(
     'input[type="text"], input[type="email"], input[type="tel"], ' +
     'input[type="date"], input:not([type]), textarea'
   );
 
+  // --- Phase 1: スキャン ---
+  const plan = [];
   inputs.forEach((input) => {
     if (input.value && input.value.trim() !== '') return;
     if (input.type === 'hidden' || input.type === 'submit' || input.type === 'button') return;
 
-    if (input.type === 'email' && profile.email) {
-      setNativeValue(input, profile.email);
-      filled++;
+    if (input.type === 'email') {
+      plan.push({ input, resolved: { key: 'email', originalLabel: '' } });
       return;
     }
 
-    // ラベル優先でフィールドを決定
     const resolved = resolveFieldKey(input);
     if (resolved) {
-      if (resolved.key === 'birthDate' && profile.birthDate) {
-        setNativeValue(input, profile.birthDate);
-        filled++;
-        return;
-      }
-      const value = getProfileValue(profile, resolved.key, resolved.originalLabel);
-      if (value) {
-        setNativeValue(input, value);
-        filled++;
-      }
+      plan.push({ input, resolved });
     }
   });
+
+  // --- Phase 2: 姓名昇格 ---
+  promoteNameFields(plan);
+
+  // --- Phase 3: 値を入力 ---
+  let filled = 0;
+  for (const entry of plan) {
+    if (entry.resolved.key === 'birthDate' && profile.birthDate) {
+      setNativeValue(entry.input, profile.birthDate);
+      filled++;
+      continue;
+    }
+    const value = getProfileValue(profile, entry.resolved.key, entry.resolved.originalLabel);
+    if (value) {
+      setNativeValue(entry.input, value);
+      filled++;
+    }
+  }
 
   filled += fillRadioButtons(profile);
 
@@ -697,48 +771,54 @@ function fillMicrosoftFormDirect(profile) {
 }
 
 // ==================================================
-// 汎用フォーム テキスト入力
-//   v3.5.2: ラベルをautocompleteより優先
-//   判定順序:
-//     1) input[type="email"] → 無条件でemail
-//     2) 表示ラベル（guessLabelDeep）→ 最優先
-//     3) autocomplete 属性 → ラベルでマッチしない場合のフォールバック
+// 汎用フォーム テキスト入力（姓名昇格対応）
+//   v3.5.3: 2パス方式
+//     Phase 1: 全入力欄をスキャンしてプラン作成
+//     Phase 2: 姓名昇格（姓/名が片方だけ → fullName に）
+//     Phase 3: 値を入力
 // ==================================================
 function fillGenericForm(profile) {
-  let filled = 0;
-
   const inputs = document.querySelectorAll(
     'input[type="text"], input[type="email"], input[type="tel"], input[type="date"], input:not([type]), textarea'
   );
 
+  // --- Phase 1: 全入力欄をスキャン ---
+  const plan = [];
   inputs.forEach((input) => {
     if (input.value && input.value.trim() !== '') return;
     if (input.type === 'hidden' || input.type === 'submit' || input.type === 'button') return;
 
-    // --- 最優先: input[type="email"] は無条件で email ---
-    if (input.type === 'email' && profile.email) {
-      setNativeValue(input, profile.email);
-      filled++;
+    // input[type="email"] は無条件で email
+    if (input.type === 'email') {
+      plan.push({ input, resolved: { key: 'email', originalLabel: '' } });
       return;
     }
 
-    // --- ラベル優先でフィールドを決定 ---
     const resolved = resolveFieldKey(input);
     if (resolved) {
-      if (resolved.key === 'birthDate' && profile.birthDate) {
-        setNativeValue(input, profile.birthDate);
-        filled++;
-        return;
-      }
-      const value = getProfileValue(profile, resolved.key, resolved.originalLabel);
-      if (value) {
-        setNativeValue(input, value);
-        filled++;
-      }
-      return;
+      plan.push({ input, resolved });
     }
   });
 
+  // --- Phase 2: 姓名昇格 ---
+  promoteNameFields(plan);
+
+  // --- Phase 3: 値を入力 ---
+  let filled = 0;
+  for (const entry of plan) {
+    if (entry.resolved.key === 'birthDate' && profile.birthDate) {
+      setNativeValue(entry.input, profile.birthDate);
+      filled++;
+      continue;
+    }
+    const value = getProfileValue(profile, entry.resolved.key, entry.resolved.originalLabel);
+    if (value) {
+      setNativeValue(entry.input, value);
+      filled++;
+    }
+  }
+
+  // --- select 要素 ---
   const selectTargets = [
     { key: 'prefecture', value: profile.prefecture },
     { key: 'jobTitle',   value: profile.jobTitle },
@@ -748,7 +828,6 @@ function fillGenericForm(profile) {
 
   const selects = document.querySelectorAll('select');
   selects.forEach((sel) => {
-    // ラベル優先でフィールドを決定
     const resolved = resolveFieldKey(sel);
     const fieldKey = resolved ? resolved.key : null;
     const target = fieldKey ? selectTargets.find((t) => t.key === fieldKey) : null;
