@@ -77,23 +77,81 @@ fillBtn.addEventListener('click', async () => {
 
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
+  // 全フレーム（iframe含む）にスクリプトを注入
   chrome.scripting.executeScript(
-    { target: { tabId: tab.id }, files: ['content.js'] },
+    { target: { tabId: tab.id, allFrames: true }, files: ['content.js'] },
     () => {
-      chrome.tabs.sendMessage(tab.id, { action: 'fill', profile }, (response) => {
-        if (chrome.runtime.lastError) {
-          showStatus('❌ このページでは実行できません');
-          return;
-        }
-        if (response && response.filled > 0) {
-          showStatus(`✅ ${response.filled} 件入力しました`);
-        } else {
-          showStatus('⚠️ 対象の入力欄が見つかりませんでした');
-        }
-      });
+      if (chrome.runtime.lastError) {
+        // allFrames で一部のフレームが失敗しても続行
+        console.warn('executeScript warning:', chrome.runtime.lastError.message);
+      }
+
+      // 全フレームにメッセージを送信し、応答を集約
+      sendFillMessageToAllFrames(tab.id, profile);
     }
   );
 });
+
+// ===== 全フレームにメッセージを送信し、応答を集約 =====
+async function sendFillMessageToAllFrames(tabId, profile) {
+  try {
+    // タブ内の全フレームを取得
+    const frames = await chrome.webNavigation.getAllFrames({ tabId });
+    if (!frames || frames.length === 0) {
+      // webNavigation が使えない場合は従来方式でフォールバック
+      sendFillMessageSimple(tabId, profile);
+      return;
+    }
+
+    let totalFilled = 0;
+    let responseCount = 0;
+    const totalFrames = frames.length;
+
+    for (const frame of frames) {
+      chrome.tabs.sendMessage(
+        tabId,
+        { action: 'fill', profile },
+        { frameId: frame.frameId },
+        (response) => {
+          // エラーは無視（content script がないフレーム等）
+          if (chrome.runtime.lastError) {
+            // 無視
+          } else if (response && response.filled > 0) {
+            totalFilled += response.filled;
+          }
+
+          responseCount++;
+          // 全フレームからの応答が揃ったら結果表示
+          if (responseCount >= totalFrames) {
+            if (totalFilled > 0) {
+              showStatus(`✅ ${totalFilled} 件入力しました`);
+            } else {
+              showStatus('⚠️ 対象の入力欄が見つかりませんでした');
+            }
+          }
+        }
+      );
+    }
+  } catch (err) {
+    // webNavigation 権限がない場合のフォールバック
+    sendFillMessageSimple(tabId, profile);
+  }
+}
+
+// ===== フォールバック: 従来の単純メッセージ送信 =====
+function sendFillMessageSimple(tabId, profile) {
+  chrome.tabs.sendMessage(tabId, { action: 'fill', profile }, (response) => {
+    if (chrome.runtime.lastError) {
+      showStatus('❌ このページでは実行できません');
+      return;
+    }
+    if (response && response.filled > 0) {
+      showStatus(`✅ ${response.filled} 件入力しました`);
+    } else {
+      showStatus('⚠️ 対象の入力欄が見つかりませんでした');
+    }
+  });
+}
 
 // ===== バックアップボタン（JSONダウンロード） =====
 backupBtn.addEventListener('click', () => {
@@ -123,15 +181,12 @@ restoreFileEl.addEventListener('change', (e) => {
   reader.onload = (ev) => {
     try {
       const data = JSON.parse(ev.target.result);
-      // バリデーション：少なくとも1つの既知キーがあるか
       const hasValidKey = FIELD_KEYS.some(k => k in data);
       if (!hasValidKey) {
         showStatus('❌ 無効なバックアップファイルです');
         return;
       }
-      // フォームに反映
       setFormFromProfile(data);
-      // ストレージにも保存
       const profile = getProfileFromForm();
       chrome.storage.local.set({ profile }, () => {
         showStatus('📤 リストアしました（保存済み）');
@@ -141,7 +196,6 @@ restoreFileEl.addEventListener('change', (e) => {
     }
   };
   reader.readAsText(file);
-  // 同じファイルを再選択できるようリセット
   restoreFileEl.value = '';
 });
 

@@ -1,10 +1,11 @@
 // ======================================================
-// content.js — フォーム自動入力 v3.5（日本語版）
-//   v3.2: ふりがな（ひらがな）/ フリガナ（カタカナ）自動判定対応
-//   v3.3: Bug修正 + 生年月日・郵便番号・住所対応
-//   v3.3.1: Google Forms 日付フィールド対応を強化（多言語・多type対応）
-//   v3.4: input[type="email"]直接マッチ + autocomplete属性対応 + guessLabel強化
+// content.js — フォーム自動入力 v3.5.1（日本語版）
+//   v3.5.1: iframe対応 + 全ページリトライ（SPA限定を廃止）
 //   v3.5: Microsoft Forms対応 + SPAリトライ機構 + guessLabel親要素探索強化
+//   v3.4: input[type="email"]直接マッチ + autocomplete属性対応 + guessLabel強化
+//   v3.3.1: Google Forms 日付フィールド対応を強化
+//   v3.3: Bug修正 + 生年月日・郵便番号・住所対応
+//   v3.2: ふりがな（ひらがな）/ フリガナ（カタカナ）自動判定対応
 // ======================================================
 
 // --- キーワード定義 ---
@@ -60,7 +61,7 @@ const AUTOCOMPLETE_MAP = {
 };
 
 // --------------------------------------------------
-// メッセージ受信（SPA リトライ対応）
+// メッセージ受信（全ページリトライ対応）
 // --------------------------------------------------
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.action !== 'fill') return;
@@ -92,8 +93,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   let filled = attemptFill();
 
-  // SPA リトライ: フィールドが見つからない場合、描画完了を待って再試行
-  if (filled === 0 && isSPAForm()) {
+  // 全ページでリトライ（動的フォームの描画完了待ち）
+  if (filled === 0) {
     let retries = 0;
     const maxRetries = 3;
     const retryInterval = 500;
@@ -126,12 +127,6 @@ function isMicrosoftForm() {
   return location.hostname.includes('forms.cloud.microsoft') ||
          location.hostname.includes('forms.office.com') ||
          location.hostname.includes('forms.microsoft.com');
-}
-
-function isSPAForm() {
-  return isMicrosoftForm() ||
-         location.hostname.includes('zoom.us') ||
-         location.hostname.includes('webinar.zoom.us');
 }
 
 // ==================================================
@@ -177,7 +172,6 @@ function normalizeLabel(text) {
 // ラベルからフィールドキーを特定
 // ==================================================
 function matchFieldKey(label) {
-  // 0) ふりがな系を最優先
   if (FIELD_MAP.fullNameKana.some((kw) => label.includes(kw.toLowerCase()))) {
     return 'fullNameKana';
   }
@@ -191,7 +185,6 @@ function matchFieldKey(label) {
     return 'fullNameKana';
   }
 
-  // 1) 具体的なフィールドを facility より先に判定（複合ラベル対策）
   if (FIELD_MAP.phone.some((kw) => label.includes(kw.toLowerCase()))) {
     return 'phone';
   }
@@ -208,17 +201,14 @@ function matchFieldKey(label) {
     return 'address';
   }
 
-  // 2) 施設系
   if (FIELD_MAP.facility.some((kw) => label.includes(kw.toLowerCase()))) {
     return 'facility';
   }
 
-  // 3) 姓
   if (FIELD_MAP.lastName.some((kw) => label.includes(kw.toLowerCase()))) {
     return 'lastName';
   }
 
-  // 4) 名（英語キーワード）
   if (FIELD_MAP.firstName.some((kw) => label.includes(kw.toLowerCase()))) {
     return 'firstName';
   }
@@ -226,7 +216,6 @@ function matchFieldKey(label) {
     return 'firstName';
   }
 
-  // 5) その他
   const otherKeys = ['prefecture', 'jobTitle', 'department', 'jobType'];
   for (const key of otherKeys) {
     if (FIELD_MAP[key].some((kw) => label.includes(kw.toLowerCase()))) {
@@ -234,7 +223,6 @@ function matchFieldKey(label) {
     }
   }
 
-  // 6) フルネーム（最後に判定）
   if (FIELD_MAP.fullName.some((kw) => label.includes(kw.toLowerCase()))) {
     return 'fullName';
   }
@@ -268,7 +256,7 @@ function isExactMei(label) {
 }
 
 // ==================================================
-// プロフィールから値を取得（ふりがなはラベルに応じて変換）
+// プロフィールから値を取得
 // ==================================================
 function getProfileValue(profile, key, originalLabel) {
   const value = profile[key];
@@ -390,7 +378,7 @@ function classifyDateInput(input) {
 }
 
 // ==================================================
-// Google Form 日付フィールド（生年月日対応）v3.3.1
+// Google Form 日付フィールド
 // ==================================================
 function fillGoogleFormDate(profile) {
   if (!profile.birthDate) return 0;
@@ -560,13 +548,11 @@ function fillGoogleFormRadio(profile) {
 }
 
 // ==================================================
-// Microsoft Forms 専用ハンドラ (v3.5)
+// Microsoft Forms 専用ハンドラ
 // ==================================================
 function fillMicrosoftForm(profile) {
   let filled = 0;
 
-  // Microsoft Forms の質問コンテナを探索
-  // 複数のセレクタパターンで探索（バージョンによってDOMが異なる）
   const questionContainers = document.querySelectorAll(
     '[data-automation-id="questionItem"], ' +
     '.office-form-question, ' +
@@ -580,7 +566,6 @@ function fillMicrosoftForm(profile) {
     filled += fillMicrosoftFormFromContainers(profile, questionContainers);
   }
 
-  // コンテナが見つからない場合、全 input を直接探索
   if (filled === 0) {
     filled += fillMicrosoftFormDirect(profile);
   }
@@ -592,7 +577,6 @@ function fillMicrosoftFormFromContainers(profile, containers) {
   let filled = 0;
 
   containers.forEach((container) => {
-    // 質問ラベルを取得
     const labelEl = container.querySelector(
       '[data-automation-id="questionTitle"], ' +
       '.question-title-box, ' +
@@ -607,7 +591,6 @@ function fillMicrosoftFormFromContainers(profile, containers) {
     if (labelEl) {
       originalLabel = labelEl.textContent.trim();
     } else {
-      // コンテナの最初のテキストノードをラベルとして使用
       const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
       let textNode = walker.nextNode();
       while (textNode) {
@@ -626,7 +609,6 @@ function fillMicrosoftFormFromContainers(profile, containers) {
     const key = matchFieldKey(label);
     if (!key) return;
 
-    // 入力欄を探索
     const input = container.querySelector(
       'input[type="text"], input[type="email"], input[type="tel"], ' +
       'input[type="date"], input:not([type]), textarea'
@@ -650,7 +632,6 @@ function fillMicrosoftFormFromContainers(profile, containers) {
   return filled;
 }
 
-// Microsoft Forms: コンテナなしの直接探索
 function fillMicrosoftFormDirect(profile) {
   let filled = 0;
 
@@ -663,14 +644,12 @@ function fillMicrosoftFormDirect(profile) {
     if (input.value && input.value.trim() !== '') return;
     if (input.type === 'hidden' || input.type === 'submit' || input.type === 'button') return;
 
-    // input[type="email"] は無条件で email
     if (input.type === 'email' && profile.email) {
       setNativeValue(input, profile.email);
       filled++;
       return;
     }
 
-    // autocomplete
     const acKey = getKeyFromAutocomplete(input);
     if (acKey) {
       const acValue = (acKey === 'birthDate') ? profile.birthDate : profile[acKey];
@@ -681,7 +660,6 @@ function fillMicrosoftFormDirect(profile) {
       }
     }
 
-    // ラベル探索（強化版）
     const originalLabel = guessLabelDeep(input);
     const label = normalizeLabel(originalLabel);
     if (!label) return;
@@ -701,14 +679,13 @@ function fillMicrosoftFormDirect(profile) {
     }
   });
 
-  // ラジオボタン
   filled += fillRadioButtons(profile);
 
   return filled;
 }
 
 // ==================================================
-// 汎用フォーム テキスト入力（Zoom 等）
+// 汎用フォーム テキスト入力
 // ==================================================
 function fillGenericForm(profile) {
   let filled = 0;
@@ -721,14 +698,12 @@ function fillGenericForm(profile) {
     if (input.value && input.value.trim() !== '') return;
     if (input.type === 'hidden' || input.type === 'submit' || input.type === 'button') return;
 
-    // --- 最優先: input[type="email"] は無条件で email ---
     if (input.type === 'email' && profile.email) {
       setNativeValue(input, profile.email);
       filled++;
       return;
     }
 
-    // --- 優先2: autocomplete 属性によるフィールド特定 ---
     const acKey = getKeyFromAutocomplete(input);
     if (acKey) {
       if (acKey === 'birthDate' && profile.birthDate) {
@@ -744,7 +719,6 @@ function fillGenericForm(profile) {
       }
     }
 
-    // --- 優先3: guessLabel + matchFieldKey（従来方式 + 強化版） ---
     const originalLabel = guessLabelDeep(input);
     const label = normalizeLabel(originalLabel);
     if (!label) return;
@@ -866,7 +840,7 @@ function fillRadioButtons(profile) {
 // ==================================================
 function getRadioLabel(radio) {
   if (radio.id) {
-    const label = document.querySelector(`label[for="${radio.id}"]`);
+    const label = document.querySelector(`label[for="${CSS.escape(radio.id)}"]`);
     if (label) return label.textContent.trim();
   }
 
@@ -885,7 +859,7 @@ function getRadioLabel(radio) {
 }
 
 // ==================================================
-// ラジオボタンのグループラベル（質問タイトル）を取得
+// ラジオボタンのグループラベル
 // ==================================================
 function getRadioGroupLabel(radio) {
   const fieldset = radio.closest('fieldset');
@@ -908,22 +882,17 @@ function getRadioGroupLabel(radio) {
 }
 
 // ==================================================
-// ラベル推測（強化版） — guessLabelDeep
-//   従来の guessLabel + 親要素探索を統合
+// ラベル推測（強化版）
 // ==================================================
 function guessLabelDeep(el) {
-  // まず従来の guessLabel を試行
   const basic = guessLabel(el);
   if (basic) {
-    // 基本ラベルが見つかったら、それがフィールドキーにマッチするか確認
     const testLabel = normalizeLabel(basic);
     if (matchFieldKey(testLabel)) return basic;
   }
 
-  // 親要素を遍歴して質問テキストを探索
   let parent = el.parentElement;
   for (let depth = 0; depth < 6 && parent; depth++) {
-    // 親の中でラベル的な要素を探す
     const candidates = parent.querySelectorAll(
       'label, legend, ' +
       '[class*="title"], [class*="Title"], [class*="label"], [class*="Label"], ' +
@@ -933,7 +902,6 @@ function guessLabelDeep(el) {
     );
 
     for (const cand of candidates) {
-      // 入力要素自体やその子要素はスキップ
       if (cand === el || cand.contains(el)) continue;
       const text = cand.textContent.trim();
       if (text.length > 0 && text.length < 200) {
@@ -942,7 +910,6 @@ function guessLabelDeep(el) {
       }
     }
 
-    // 親の直前の兄弟要素もチェック
     const prevSibling = parent.previousElementSibling;
     if (prevSibling) {
       const text = prevSibling.textContent.trim();
@@ -955,7 +922,6 @@ function guessLabelDeep(el) {
     parent = parent.parentElement;
   }
 
-  // 基本ラベルがあればそれを返す（マッチしなくても）
   return basic || '';
 }
 
@@ -963,20 +929,16 @@ function guessLabelDeep(el) {
 // ラベル推測（基本版）
 // ==================================================
 function guessLabel(el) {
-  // 1) label[for="id"]
   if (el.id) {
     const label = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
     if (label) return label.textContent.trim();
   }
 
-  // 2) 親 <label>
   const parentLabel = el.closest('label');
   if (parentLabel) return parentLabel.textContent.trim();
 
-  // 3) aria-label
   if (el.getAttribute('aria-label')) return el.getAttribute('aria-label');
 
-  // 4) aria-labelledby（React/SPA フォームで多用）
   const labelledBy = el.getAttribute('aria-labelledby');
   if (labelledBy) {
     const ids = labelledBy.split(/\s+/);
@@ -987,13 +949,10 @@ function guessLabel(el) {
     if (texts.length > 0) return texts.join(' ');
   }
 
-  // 5) placeholder
   if (el.placeholder) return el.placeholder;
 
-  // 6) name 属性
   if (el.name) return el.name;
 
-  // 7) 直前の兄弟要素
   const prev = el.previousElementSibling;
   if (prev) return prev.textContent.trim();
 
@@ -1023,7 +982,5 @@ function setNativeValue(el, value) {
 
   el.dispatchEvent(new Event('input',  { bubbles: true }));
   el.dispatchEvent(new Event('change', { bubbles: true }));
-
-  // React 16+ 用の追加イベント
   el.dispatchEvent(new Event('blur', { bubbles: true }));
 }
